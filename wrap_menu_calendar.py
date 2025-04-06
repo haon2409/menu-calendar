@@ -8,11 +8,9 @@ import objc
 import os
 import logging
 
-# Đường dẫn tới menu_calendar.py
 MENU_CALENDAR_PATH = "/Users/haonguyen/Projects/menu/menu_calendar/menu_calendar.py"
 last_update_date = None
 
-# Thiết lập logging
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(SCRIPT_DIR, "wrap_menu_calendar.log")
 logging.basicConfig(
@@ -21,6 +19,17 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+def clear_logs():
+    """Xóa các file log stdout và stderr."""
+    log_files = ["/tmp/menucalendar.out", "/tmp/menucalendar.err"]
+    for log_file in log_files:
+        try:
+            if os.path.exists(log_file):
+                os.remove(log_file)
+                logging.info(f"Cleared log file: {log_file}")
+        except Exception as e:
+            logging.error(f"Error clearing log file {log_file}: {str(e)}")   
 
 def notify_update():
     """Gửi thông báo để menu_calendar.py cập nhật lịch."""
@@ -120,6 +129,9 @@ def schedule_midnight_update():
 
 def main():
     try:
+        # Xóa log trước khi khởi động
+        clear_logs()
+        
         global last_update_date
         process = None
         

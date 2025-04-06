@@ -17,6 +17,8 @@ from googleapiclient.discovery import build
 import os
 from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
+import logging
+import socket
 
 # Định nghĩa phạm vi (scope) truy cập và đường dẫn file
 SCOPES = [
@@ -26,38 +28,64 @@ SCOPES = [
 CLIENT_SECRET_FILE = '/Users/haonguyen/Projects/menu/menu_calendar/client_secret_856485619448-q2tqisv610002j405r3er1o48jm7qrgo.apps.googleusercontent.com.json'
 TOKEN_FILE = '/Users/haonguyen/Projects/menu/menu_calendar/token.json'
 
+# Thiết lập logging
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(SCRIPT_DIR, "menu_calendar.log")
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+def check_network():
+    """Kiểm tra kết nối mạng."""
+    try:
+        socket.create_connection(("www.google.com", 80), timeout=5)
+        return True
+    except OSError:
+        logging.error("No network connection available")
+        return False
+
 def get_service(api_name, api_version):
     """Tạo dịch vụ cho API được chỉ định (Tasks)."""
+    if not check_network():
+        return None
+    
     creds = None
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     
     if creds and creds.expired and creds.refresh_token:
         try:
-            print("Access token đã hết hạn, đang làm mới bằng refresh token...")
-            creds.refresh(Request())
+            logging.info("Access token đã hết hạn, đang làm mới bằng refresh token...")
+            creds.refresh(Request(timeout=60))  # Tăng timeout lên 60 giây
             with open(TOKEN_FILE, 'w') as token:
                 token.write(creds.to_json())
-            print("Token đã được làm mới và lưu lại.")
+            logging.info("Token đã được làm mới và lưu lại.")
         except RefreshError as e:
-            print(f"Lỗi khi làm mới token: {e}. Yêu cầu đăng nhập lại...")
+            logging.error(f"Lỗi khi làm mới token: {str(e)}. Yêu cầu đăng nhập lại...")
             creds = None
     
     if not creds or not creds.valid:
-        print("Yêu cầu đăng nhập để cấp quyền truy cập...")
-        flow = InstalledAppFlow.from_client_secrets_file(
-            CLIENT_SECRET_FILE, 
-            SCOPES
-        )
-        # Nếu cần prompt='consent', áp dụng sau khi tạo flow
-        flow.prompt = 'consent'  # Tùy chọn, chỉ thêm nếu cần buộc consent
-        creds = flow.run_local_server(port=0)
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-        print("Đăng nhập thành công! Token đã được lưu.")
+        logging.info("Yêu cầu đăng nhập để cấp quyền truy cập...")
+        try:
+            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+            flow.prompt = 'consent'
+            creds = flow.run_local_server(port=0, timeout_seconds=60)  # Tăng timeout
+            with open(TOKEN_FILE, 'w') as token:
+                token.write(creds.to_json())
+            logging.info("Đăng nhập thành công! Token đã được lưu.")
+        except Exception as e:
+            logging.error(f"Lỗi khi xác thực: {str(e)}")
+            return None
     
-    service = build(api_name, api_version, credentials=creds)
-    return service
+    try:
+        service = build(api_name, api_version, credentials=creds)
+        return service
+    except Exception as e:
+        logging.error(f"Lỗi khi xây dựng dịch vụ {api_name}: {str(e)}")
+        return None
 
 class ClickableTextField(NSTextField):
     def init(self):
@@ -68,7 +96,7 @@ class ClickableTextField(NSTextField):
         return self
 
     def mouseDown_(self, event):
-        print("Mouse clicked on '...'")
+        logging.info("Mouse clicked on '...'")
         if self.target and self.action:
             NSApplication.sharedApplication().sendAction_to_from_(self.action, self.target, self)
 
@@ -85,7 +113,7 @@ class ClickableDayLabel(NSTextField):
         pass  # Bỏ qua click trái
 
     def rightMouseDown_(self, event):
-        print(f"Right-clicked on day: {self.stringValue()} - Date: {self.task_date}")
+        logging.info(f"Right-clicked on day: {self.stringValue()} - Date: {self.task_date}")
         
         menu = NSMenu.alloc().initWithTitle_("Day Menu")
         add_task_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
@@ -109,117 +137,134 @@ class TaskActionHandler(NSObject):
 
     def completeAction_(self, sender):
         if not self.tasklist_id:
-            tasklists = self.tasks_service.tasklists().list().execute()
-            for tasklist in tasklists.get('items', []):
-                if tasklist['title'] == "My List":
-                    self.tasklist_id = tasklist['id']
-                    break
+            try:
+                tasklists = self.tasks_service.tasklists().list().execute()
+                for tasklist in tasklists.get('items', []):
+                    if tasklist['title'] == "My List":
+                        self.tasklist_id = tasklist['id']
+                        break
+            except Exception as e:
+                logging.error(f"Error fetching tasklists: {str(e)}")
+                return
 
-        task = self.tasks_service.tasks().get(tasklist=self.tasklist_id, task=self.task_id).execute()
-        current_status = task.get('status', 'needsAction')
+        try:
+            task = self.tasks_service.tasks().get(tasklist=self.tasklist_id, task=self.task_id).execute()
+            current_status = task.get('status', 'needsAction')
 
-        if current_status == 'needsAction':
-            task['status'] = 'completed'
-            task['completed'] = datetime.utcnow().isoformat() + 'Z'
-        else:
-            task['status'] = 'needsAction'
-            if 'completed' in task:
-                del task['completed']
+            if current_status == 'needsAction':
+                task['status'] = 'completed'
+                task['completed'] = datetime.utcnow().isoformat() + 'Z'
+            else:
+                task['status'] = 'needsAction'
+                if 'completed' in task:
+                    del task['completed']
 
-        updated_task = self.tasks_service.tasks().update(
-            tasklist=self.tasklist_id,
-            task=self.task_id,
-            body=task
-        ).execute()
+            updated_task = self.tasks_service.tasks().update(
+                tasklist=self.tasklist_id,
+                task=self.task_id,
+                body=task
+            ).execute()
 
-        print(f"Task '{self.task_label.stringValue()}' updated to status: {updated_task['status']}")
-        NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
-            "com.haonguyen.menucalendar.update",
-            None
-        )
+            logging.info(f"Task '{self.task_label.stringValue()}' updated to status: {updated_task['status']}")
+            NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+                "com.haonguyen.menucalendar.update",
+                None
+            )
+        except Exception as e:
+            logging.error(f"Error updating task '{self.task_label.stringValue()}': {str(e)}")
 
     def editAction_(self, sender):
         if not self.tasklist_id:
-            tasklists = self.tasks_service.tasklists().list().execute()
-            for tasklist in tasklists.get('items', []):
-                if tasklist['title'] == "My List":
-                    self.tasklist_id = tasklist['id']
-                    break
+            try:
+                tasklists = self.tasks_service.tasklists().list().execute()
+                for tasklist in tasklists.get('items', []):
+                    if tasklist['title'] == "My List":
+                        self.tasklist_id = tasklist['id']
+                        break
+            except Exception as e:
+                logging.error(f"Error fetching tasklists: {str(e)}")
+                return
 
-        task = self.tasks_service.tasks().get(tasklist=self.tasklist_id, task=self.task_id).execute()
+        try:
+            task = self.tasks_service.tasks().get(tasklist=self.tasklist_id, task=self.task_id).execute()
 
-        alert = objc.lookUpClass("NSAlert").alloc().init()
-        alert.setMessageText_("Edit Task")
-        alert.setInformativeText_("Enter new task details:")
-        alert.addButtonWithTitle_("OK")
-        alert.addButtonWithTitle_("Cancel")
+            alert = objc.lookUpClass("NSAlert").alloc().init()
+            alert.setMessageText_("Edit Task")
+            alert.setInformativeText_("Enter new task details:")
+            alert.addButtonWithTitle_("OK")
+            alert.addButtonWithTitle_("Cancel")
 
-        # Tạo container view để chứa các trường input
-        container_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 80))
-        
-        # Trường nhập title
-        title_label = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 50, 60, 20))
-        title_label.setStringValue_("Title:")
-        title_label.setBezeled_(False)
-        title_label.setDrawsBackground_(False)
-        title_label.setEditable_(False)
-        container_view.addSubview_(title_label)
-        
-        title_field = NSTextField.alloc().initWithFrame_(NSMakeRect(70, 50, 220, 20))
-        title_field.setStringValue_(task.get('title', ''))
-        container_view.addSubview_(title_field)
-        
-        # Trường nhập details
-        details_label = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 20, 60, 20))
-        details_label.setStringValue_("Details:")
-        details_label.setBezeled_(False)
-        details_label.setDrawsBackground_(False)
-        details_label.setEditable_(False)
-        container_view.addSubview_(details_label)
-        
-        details_field = NSTextField.alloc().initWithFrame_(NSMakeRect(70, 20, 220, 20))
-        details_field.setStringValue_(task.get('notes', ''))
-        container_view.addSubview_(details_field)
-        
-        alert.setAccessoryView_(container_view)
+            container_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 80))
+            title_label = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 50, 60, 20))
+            title_label.setStringValue_("Title:")
+            title_label.setBezeled_(False)
+            title_label.setDrawsBackground_(False)
+            title_label.setEditable_(False)
+            container_view.addSubview_(title_label)
+            
+            title_field = NSTextField.alloc().initWithFrame_(NSMakeRect(70, 50, 220, 20))
+            title_field.setStringValue_(task.get('title', ''))
+            container_view.addSubview_(title_field)
+            
+            details_label = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 20, 60, 20))
+            details_label.setStringValue_("Details:")
+            details_label.setBezeled_(False)
+            details_label.setDrawsBackground_(False)
+            details_label.setEditable_(False)
+            container_view.addSubview_(details_label)
+            
+            details_field = NSTextField.alloc().initWithFrame_(NSMakeRect(70, 20, 220, 20))
+            details_field.setStringValue_(task.get('notes', ''))
+            container_view.addSubview_(details_field)
+            
+            alert.setAccessoryView_(container_view)
 
-        response = alert.runModal()
-        if response == 1000:
-            new_title = title_field.stringValue().strip()
-            new_details = details_field.stringValue().strip()
-            if new_title:
-                task['title'] = new_title
-                task['notes'] = new_details
-                self.tasks_service.tasks().update(
-                    tasklist=self.tasklist_id,
-                    task=self.task_id,
-                    body=task
-                ).execute()
+            response = alert.runModal()
+            if response == 1000:
+                new_title = title_field.stringValue().strip()
+                new_details = details_field.stringValue().strip()
+                if new_title:
+                    task['title'] = new_title
+                    task['notes'] = new_details
+                    self.tasks_service.tasks().update(
+                        tasklist=self.tasklist_id,
+                        task=self.task_id,
+                        body=task
+                    ).execute()
 
-                print(f"Task '{self.task_label.stringValue()}' updated to new title: {new_title}")
-                NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
-                    "com.haonguyen.menucalendar.update",
-                    None
-                )
+                    logging.info(f"Task '{self.task_label.stringValue()}' updated to new title: {new_title}")
+                    NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+                        "com.haonguyen.menucalendar.update",
+                        None
+                    )
+        except Exception as e:
+            logging.error(f"Error editing task '{self.task_label.stringValue()}': {str(e)}")
 
     def removeAction_(self, sender):
         if not self.tasklist_id:
-            tasklists = self.tasks_service.tasklists().list().execute()
-            for tasklist in tasklists.get('items', []):
-                if tasklist['title'] == "My List":
-                    self.tasklist_id = tasklist['id']
-                    break
+            try:
+                tasklists = self.tasks_service.tasklists().list().execute()
+                for tasklist in tasklists.get('items', []):
+                    if tasklist['title'] == "My List":
+                        self.tasklist_id = tasklist['id']
+                        break
+            except Exception as e:
+                logging.error(f"Error fetching tasklists: {str(e)}")
+                return
 
-        self.tasks_service.tasks().delete(
-            tasklist=self.tasklist_id,
-            task=self.task_id
-        ).execute()
+        try:
+            self.tasks_service.tasks().delete(
+                tasklist=self.tasklist_id,
+                task=self.task_id
+            ).execute()
 
-        print(f"Task '{self.task_label.stringValue()}' removed")
-        NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
-            "com.haonguyen.menucalendar.update",
-            None
-        )
+            logging.info(f"Task '{self.task_label.stringValue()}' removed")
+            NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+                "com.haonguyen.menucalendar.update",
+                None
+            )
+        except Exception as e:
+            logging.error(f"Error removing task '{self.task_label.stringValue()}': {str(e)}")
 
 class CalendarView(NSView):
     def initWithFrame_(self, frame):
@@ -236,6 +281,8 @@ class CalendarView(NSView):
             self.lunar_label = None
             self.tasks_by_date = {}
             self.tasks_service = get_service('tasks', 'v1')
+            if not self.tasks_service:
+                logging.error("Failed to initialize tasks_service")
             self.timer = None
             self.setupUI()
         return self
@@ -325,35 +372,53 @@ class CalendarView(NSView):
             self.day_labels.append(label)
 
     def get_tasklist_id(self):
-        tasklists = self.tasks_service.tasklists().list().execute()
-        for tasklist in tasklists.get('items', []):
-            if tasklist['title'] == "My List":
-                return tasklist['id']
-        new_tasklist = {'title': "My List"}
-        result = self.tasks_service.tasklists().insert(body=new_tasklist).execute()
-        return result['id']
+        try:
+            tasklists = self.tasks_service.tasklists().list().execute()
+            for tasklist in tasklists.get('items', []):
+                if tasklist['title'] == "My List":
+                    return tasklist['id']
+            new_tasklist = {'title': "My List"}
+            result = self.tasks_service.tasklists().insert(body=new_tasklist).execute()
+            return result['id']
+        except Exception as e:
+            logging.error(f"Error getting tasklist ID: {str(e)}")
+            return None
 
     def get_tasks(self, due_min, due_max):
         self.tasks_by_date = {}
         due_min_iso = due_min + 'T00:00:00.000Z'
         due_max_iso = due_max + 'T23:59:59.999Z'
 
+        if not self.tasks_service:
+            logging.error("Tasks service not available")
+            return
+
         tasklist_id = self.get_tasklist_id()
+        if not tasklist_id:
+            return
+
         all_tasks = []
         page_token = None
         while True:
-            tasks = self.tasks_service.tasks().list(
-                tasklist=tasklist_id,
-                maxResults=100,
-                pageToken=page_token,
-                dueMin=due_min_iso,
-                dueMax=due_max_iso,
-                showCompleted=True,
-                showHidden=True
-            ).execute()
-            all_tasks.extend(tasks.get('items', []))
-            page_token = tasks.get('nextPageToken')
-            if not page_token:
+            try:
+                tasks = self.tasks_service.tasks().list(
+                    tasklist=tasklist_id,
+                    maxResults=100,
+                    pageToken=page_token,
+                    dueMin=due_min_iso,
+                    dueMax=due_max_iso,
+                    showCompleted=True,
+                    showHidden=True
+                ).execute()
+                all_tasks.extend(tasks.get('items', []))
+                page_token = tasks.get('nextPageToken')
+                if not page_token:
+                    break
+            except TimeoutError as e:
+                logging.error(f"Timeout error fetching tasks: {str(e)}")
+                break
+            except Exception as e:
+                logging.error(f"Error fetching tasks: {str(e)}")
                 break
 
         for task in all_tasks:
@@ -364,15 +429,15 @@ class CalendarView(NSView):
                     self.tasks_by_date[due_date] = []
                 self.tasks_by_date[due_date].append(task)
 
-        # Sắp xếp tasks trong mỗi ngày theo position (ngược lại)
         for date in self.tasks_by_date:
             self.tasks_by_date[date].sort(key=lambda x: x.get('position', '00000000000000000000'), reverse=True)
 
     def updateCalendar(self):
         self.updateCalendarUI()
-        self.loadTasks()  # Tải tasks ngay lập tức thay vì delay
+        self.loadTasks()
 
     def updateCalendarUI(self):
+        logging.info(f"Updating UI with month: {self.current_month}, year: {self.current_year}")
         for label in self.date_labels:
             label.removeFromSuperview()
         self.date_labels = []
@@ -405,21 +470,15 @@ class CalendarView(NSView):
 
                 day_label.task_date = task_date
 
-                # Xử lý ngày hiện tại với nền tròn
                 if day == current_date.day and self.current_month == current_date.month and self.current_year == current_date.year:
-                    # Tạo hình tròn chứa số ngày
-                    circle_diameter = 19  # Đường kính vừa phải
+                    circle_diameter = 19
                     image = NSImage.alloc().initWithSize_(NSSize(circle_diameter, circle_diameter))
                     image.lockFocus()
-                    
-                    # Vẽ hình tròn
                     circle_path = objc.lookUpClass("NSBezierPath").bezierPathWithOvalInRect_(
                         NSMakeRect(0, 0, circle_diameter, circle_diameter)
                     )
-                    NSColor.systemOrangeColor().setFill()  # Màu tương phản
+                    NSColor.systemOrangeColor().setFill()
                     circle_path.fill()
-                    
-                    # Vẽ số ngày
                     day_str = str(day)
                     day_attributes = {
                         "NSFont": NSFont.systemFontOfSize_(12),
@@ -428,16 +487,13 @@ class CalendarView(NSView):
                     day_attr_string = NSAttributedString.alloc().initWithString_attributes_(day_str, day_attributes)
                     text_size = day_attr_string.size()
                     day_attr_string.drawAtPoint_(NSMakePoint((circle_diameter - text_size.width) / 2, (circle_diameter - text_size.height) / 2))
-                    
                     image.unlockFocus()
                     
-                    # Tạo attachment cho hình tròn
                     attachment = NSTextAttachment.alloc().init()
                     attachment.setImage_(image)                    
                     day_label.setFrameOrigin_(NSMakePoint(self.padding + col * (55 + 4) + 14, 340 + offset - row * 68 + 2))
                     day_label.setAttributedStringValue_(NSAttributedString.attributedStringWithAttachment_(attachment))                    
                 else:
-                    # Các ngày khác không có nền tròn
                     if day == 0 or task_date.month != self.current_month:
                         day_label.setTextColor_(NSColor.grayColor())
                     else:
@@ -456,113 +512,120 @@ class CalendarView(NSView):
         self.subviews()[1].setStringValue_(f"Tháng {self.current_month}, {self.current_year}")
 
     def loadTasks(self):
-        offset = 30
-        first_weekday, days_in_month = calendar.monthrange(self.current_year, self.current_month)
-        cal = calendar.monthcalendar(self.current_year, self.current_month)
+        if not self.tasks_service:
+            logging.error("Tasks service not available, skipping loadTasks")
+            return
 
-        due_min = (datetime(self.current_year, self.current_month, 1) - timedelta(days=first_weekday)).strftime("%Y-%m-%d")
-        last_week = cal[-1]
-        if 0 in last_week:
-            last_day_of_month = days_in_month
-            next_days = [d for d in last_week if d == 0]
-            max_next_day = len(next_days)
-            due_max_date = datetime(self.current_year, self.current_month, last_day_of_month) + timedelta(days=max_next_day)
-        else:
-            due_max_date = datetime(self.current_year, self.current_month, max([day for week in cal for day in week if day != 0]))
-        due_max = due_max_date.strftime("%Y-%m-%d")
+        try:
+            offset = 30
+            first_weekday, days_in_month = calendar.monthrange(self.current_year, self.current_month)
+            cal = calendar.monthcalendar(self.current_year, self.current_month)
 
-        self.get_tasks(due_min, due_max)
+            due_min = (datetime(self.current_year, self.current_month, 1) - timedelta(days=first_weekday)).strftime("%Y-%m-%d")
+            last_week = cal[-1]
+            if 0 in last_week:
+                last_day_of_month = days_in_month
+                next_days = [d for d in last_week if d == 0]
+                max_next_day = len(next_days)
+                due_max_date = datetime(self.current_year, self.current_month, last_day_of_month) + timedelta(days=max_next_day)
+            else:
+                due_max_date = datetime(self.current_year, self.current_month, max([day for week in cal for day in week if day != 0]))
+            due_max = due_max_date.strftime("%Y-%m-%d")
 
-        start_date = datetime(self.current_year, self.current_month, 1) - timedelta(days=first_weekday)
-        day_offset = 0
+            self.get_tasks(due_min, due_max)
 
-        for row, week in enumerate(cal):
-            for col, day in enumerate(week):
-                task_date = (start_date + timedelta(days=day_offset)).date()
-                day_offset += 1
+            start_date = datetime(self.current_year, self.current_month, 1) - timedelta(days=first_weekday)
+            day_offset = 0
 
-                base_y = 340 + offset - row * 68
-                task_labels = []
-                tasks = self.tasks_by_date.get(task_date, [])
-                for i in range(4):
-                    if i == 3 and len(tasks) > 3:
-                        task_label = ClickableTextField.alloc().init()
-                        task_label = task_label.initWithFrame_(NSMakeRect(self.padding + col * (55 + 4), base_y + 50 - (i * 12) - 10, 55, 10))
-                        task_label.setStringValue_("...")
+            for row, week in enumerate(cal):
+                for col, day in enumerate(week):
+                    task_date = (start_date + timedelta(days=day_offset)).date()
+                    day_offset += 1
+
+                    base_y = 340 + offset - row * 68
+                    task_labels = []
+                    tasks = self.tasks_by_date.get(task_date, [])
+                    for i in range(4):
+                        if i == 3 and len(tasks) > 3:
+                            task_label = ClickableTextField.alloc().init()
+                            task_label = task_label.initWithFrame_(NSMakeRect(self.padding + col * (55 + 4), base_y + 50 - (i * 12) - 10, 55, 10))
+                            task_label.setStringValue_("...")
+                            task_label.setBezeled_(False)
+                            task_label.setDrawsBackground_(True)
+                            task_label.setBackgroundColor_(NSColor.systemCyanColor())
+                            task_label.setTextColor_(NSColor.blackColor())
+                            task_label.setEditable_(False)
+                            task_label.setAlignment_(NSCenterTextAlignment)
+                            task_label.setFont_(NSFont.systemFontOfSize_(8))
+                            task_label.target = self
+                            task_label.action = "showTaskPopover:"
+                            self.task_info[task_label] = {
+                                'day': day if day != 0 else task_date.day,
+                                'task_labels': task_labels,
+                                'tasks': tasks
+                            }
+                        elif i < len(tasks):
+                            task_label = NSTextField.alloc().init()
+                            task_label.initWithFrame_(NSMakeRect(self.padding + col * (55 + 4), base_y + 50 - (i * 12) - 10, 55, 10))
+                            full_title = tasks[i].get('title', 'No Title')
+                            max_length = 10
+                            display_title = full_title if len(full_title) <= max_length else full_title[:max_length - 3] + '...'
+
+                            task_label.setStringValue_(display_title)
+                            details = tasks[i].get('notes', '')
+                            tooltip = full_title
+                            if details:
+                                tooltip += f"\n{details}"
+                            task_label.setToolTip_(tooltip)
+
+                            menu = NSMenu.alloc().initWithTitle_("Task Menu")
+                            handler = TaskActionHandler.alloc().initWithTaskLabel_taskId_tasksService_(
+                                task_label, tasks[i].get('id'), self.tasks_service
+                            )
+                            self.task_handlers.append(handler)
+
+                            task_status = tasks[i].get('status', 'needsAction')
+                            menu_title = "Complete" if task_status == 'needsAction' else "Incomplete"
+                            complete_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(menu_title, "completeAction:", "")
+                            complete_item.setTarget_(handler)
+                            menu.addItem_(complete_item)
+
+                            edit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Edit", "editAction:", "")
+                            edit_item.setTarget_(handler)
+                            menu.addItem_(edit_item)
+
+                            remove_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Remove", "removeAction:", "")
+                            remove_item.setTarget_(handler)
+                            menu.addItem_(remove_item)
+
+                            task_label.setMenu_(menu)
+                            task_labels.append(task_label)
+                        else:
+                            continue
+
                         task_label.setBezeled_(False)
                         task_label.setDrawsBackground_(True)
-                        task_label.setBackgroundColor_(NSColor.systemCyanColor())
-                        task_label.setTextColor_(NSColor.blackColor())
+                        task_status = tasks[i].get('status', 'needsAction') if i < len(tasks) else 'needsAction'
+                        if task_status == 'completed':
+                            task_label.setBackgroundColor_(NSColor.grayColor())
+                            task_label.setTextColor_(NSColor.blackColor())
+                        else:
+                            task_label.setBackgroundColor_(NSColor.systemCyanColor())
+                            task_label.setTextColor_(NSColor.blackColor())
+
                         task_label.setEditable_(False)
                         task_label.setAlignment_(NSCenterTextAlignment)
                         task_label.setFont_(NSFont.systemFontOfSize_(8))
-                        task_label.target = self
-                        task_label.action = "showTaskPopover:"
-                        self.task_info[task_label] = {
-                            'day': day if day != 0 else task_date.day,
-                            'task_labels': task_labels,
-                            'tasks': tasks
-                        }
-                    elif i < len(tasks):
-                        task_label = NSTextField.alloc().init()
-                        task_label.initWithFrame_(NSMakeRect(self.padding + col * (55 + 4), base_y + 50 - (i * 12) - 10, 55, 10))
-                        full_title = tasks[i].get('title', 'No Title')
-                        max_length = 10
-                        display_title = full_title if len(full_title) <= max_length else full_title[:max_length - 3] + '...'
 
-                        task_label.setStringValue_(display_title)
-                        
-                        # Tạo tooltip với title và details
-                        details = tasks[i].get('notes', '')
-                        tooltip = full_title
-                        if details:
-                            tooltip += f"\n{details}"
-                        task_label.setToolTip_(tooltip)
+                        self.addSubview_(task_label)
+                        self.date_labels.append(task_label)
+        except TimeoutError as e:
+            logging.error(f"Timeout error while loading tasks: {str(e)}")
+        except Exception as e:
+            logging.error(f"Error loading tasks: {str(e)}")
+        finally:
+            self.setNeedsDisplay_(True)
 
-                        menu = NSMenu.alloc().initWithTitle_("Task Menu")
-                        handler = TaskActionHandler.alloc().initWithTaskLabel_taskId_tasksService_(
-                            task_label, tasks[i].get('id'), self.tasks_service
-                        )
-                        self.task_handlers.append(handler)
-
-                        task_status = tasks[i].get('status', 'needsAction')
-                        menu_title = "Complete" if task_status == 'needsAction' else "Incomplete"
-                        complete_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(menu_title, "completeAction:", "")
-                        complete_item.setTarget_(handler)
-                        menu.addItem_(complete_item)
-
-                        edit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Edit", "editAction:", "")
-                        edit_item.setTarget_(handler)
-                        menu.addItem_(edit_item)
-
-                        remove_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Remove", "removeAction:", "")
-                        remove_item.setTarget_(handler)
-                        menu.addItem_(remove_item)
-
-                        task_label.setMenu_(menu)
-                        task_labels.append(task_label)
-                    else:
-                        continue
-
-                    task_label.setBezeled_(False)
-                    task_label.setDrawsBackground_(True)
-                    task_status = tasks[i].get('status', 'needsAction') if i < len(tasks) else 'needsAction'
-                    if task_status == 'completed':
-                        task_label.setBackgroundColor_(NSColor.grayColor())
-                        task_label.setTextColor_(NSColor.blackColor())
-                    else:
-                        task_label.setBackgroundColor_(NSColor.systemCyanColor())
-                        task_label.setTextColor_(NSColor.blackColor())
-
-                    task_label.setEditable_(False)
-                    task_label.setAlignment_(NSCenterTextAlignment)
-                    task_label.setFont_(NSFont.systemFontOfSize_(8))
-
-                    self.addSubview_(task_label)
-                    self.date_labels.append(task_label)
-
-        self.setNeedsDisplay_(True)
-    
     def showAddTaskAlert_(self, sender):
         alert = objc.lookUpClass("NSAlert").alloc().init()
         alert.setMessageText_(f"Add Task for {sender.task_date}")
@@ -570,10 +633,8 @@ class CalendarView(NSView):
         alert.addButtonWithTitle_("Add")
         alert.addButtonWithTitle_("Cancel")
 
-        # Tạo container view
         container_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 140))
         
-        # Trường title
         title_label = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 110, 60, 20))
         title_label.setStringValue_("Title:")
         title_label.setBezeled_(False)
@@ -585,7 +646,6 @@ class CalendarView(NSView):
         title_field.setStringValue_("")
         container_view.addSubview_(title_field)
         
-        # Trường details
         details_label = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 80, 60, 20))
         details_label.setStringValue_("Details:")
         details_label.setBezeled_(False)
@@ -597,7 +657,6 @@ class CalendarView(NSView):
         details_field.setStringValue_("")
         container_view.addSubview_(details_field)
         
-        # Hàng Repeat
         repeat_label = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 50, 60, 20))
         repeat_label.setStringValue_("Repeat:")
         repeat_label.setBezeled_(False)
@@ -606,13 +665,12 @@ class CalendarView(NSView):
         container_view.addSubview_(repeat_label)
         
         self.repeat_checkbox = objc.lookUpClass("NSButton").alloc().initWithFrame_(NSMakeRect(65, 50, 36, 20))
-        self.repeat_checkbox.setButtonType_(1)  # NSButtonTypeSwitch
+        self.repeat_checkbox.setButtonType_(1)
         self.repeat_checkbox.setTitle_("")
         self.repeat_checkbox.setTarget_(self)
         self.repeat_checkbox.setAction_("toggleRepeatOptions:")
         container_view.addSubview_(self.repeat_checkbox)
         
-        # Hàng repeat options (ban đầu ẩn)
         self.repeat_options_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 30))
         self.repeat_options_view.setHidden_(True)
         
@@ -634,72 +692,67 @@ class CalendarView(NSView):
         alert.setAccessoryView_(container_view)
 
         response = alert.runModal()
-        if response == 1000:  # Nút "Add" được nhấn
+        if response == 1000:
             new_title = title_field.stringValue().strip()
             new_details = details_field.stringValue().strip()
             if new_title:
-                tasklist_id = self.get_tasklist_id()
-                base_date = sender.task_date  # Ngày được chọn
-                
-                # Danh sách các task sẽ được tạo
-                task_bodies = []
-                
-                if self.repeat_checkbox.state() != 1:  # Không lặp lại
-                    task_body = {
-                        'title': new_title,
-                        'notes': new_details,
-                        'due': base_date.isoformat() + 'T00:00:00.000Z',
-                        'status': 'needsAction'
-                    }
-                    task_bodies.append(task_body)
-                else:  # Lặp lại
-                    repeat_count = int(repeat_menu.titleOfSelectedItem())  # Số đơn vị lặp lại
-                    unit = unit_menu.titleOfSelectedItem()  # Đơn vị: Day(s), Week(s), Month(s)
-                    times = int(times_menu.titleOfSelectedItem())  # Tổng số task
+                try:
+                    tasklist_id = self.get_tasklist_id()
+                    base_date = sender.task_date
                     
-                    current_date = base_date
-                    for i in range(times):
-                        # Tính ngày đến hạn cho task hiện tại
-                        if i == 0:
-                            due_date = current_date
-                        else:
-                            if unit == "Day(s)":
-                                current_date = current_date + timedelta(days=repeat_count)
-                            elif unit == "Week(s)":
-                                current_date = current_date + timedelta(weeks=repeat_count)
-                            elif unit == "Month(s)":
-                                # Tính tháng tiếp theo
-                                new_month = current_date.month + repeat_count
-                                new_year = current_date.year + (new_month - 1) // 12
-                                new_month = (new_month - 1) % 12 + 1
-                                # Lấy số ngày tối đa của tháng mới
-                                max_days = calendar.monthrange(new_year, new_month)[1]
-                                # Nếu ngày hiện tại vượt quá max_days, điều chỉnh thành ngày cuối tháng
-                                new_day = min(current_date.day, max_days)
-                                current_date = current_date.replace(year=new_year, month=new_month, day=new_day)
-                            due_date = current_date
-                        
+                    task_bodies = []
+                    if self.repeat_checkbox.state() != 1:
                         task_body = {
                             'title': new_title,
                             'notes': new_details,
-                            'due': due_date.isoformat() + 'T00:00:00.000Z',
+                            'due': base_date.isoformat() + 'T00:00:00.000Z',
                             'status': 'needsAction'
                         }
                         task_bodies.append(task_body)
-                
-                # Gọi API để tạo tất cả các task
-                for task_body in task_bodies:
-                    new_task = self.tasks_service.tasks().insert(
-                        tasklist=tasklist_id,
-                        body=task_body
-                    ).execute()
-                    print(f"Task '{new_title}' added for {task_body['due'][:10]} with ID: {new_task['id']}")
-                
-                # Cập nhật UI một lần sau khi tất cả task được tạo
-                NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
-                    "com.haonguyen.menucalendar.update",
-                    None
-                )
+                    else:
+                        repeat_count = int(repeat_menu.titleOfSelectedItem())
+                        unit = unit_menu.titleOfSelectedItem()
+                        times = int(times_menu.titleOfSelectedItem())
+                        
+                        current_date = base_date
+                        for i in range(times):
+                            if i == 0:
+                                due_date = current_date
+                            else:
+                                if unit == "Day(s)":
+                                    current_date = current_date + timedelta(days=repeat_count)
+                                elif unit == "Week(s)":
+                                    current_date = current_date + timedelta(weeks=repeat_count)
+                                elif unit == "Month(s)":
+                                    new_month = current_date.month + repeat_count
+                                    new_year = current_date.year + (new_month - 1) // 12
+                                    new_month = (new_month - 1) % 12 + 1
+                                    max_days = calendar.monthrange(new_year, new_month)[1]
+                                    new_day = min(current_date.day, max_days)
+                                    current_date = current_date.replace(year=new_year, month=new_month, day=new_day)
+                                due_date = current_date
+                            
+                            task_body = {
+                                'title': new_title,
+                                'notes': new_details,
+                                'due': due_date.isoformat() + 'T00:00:00.000Z',
+                                'status': 'needsAction'
+                            }
+                            task_bodies.append(task_body)
+                    
+                    for task_body in task_bodies:
+                        new_task = self.tasks_service.tasks().insert(
+                            tasklist=tasklist_id,
+                            body=task_body
+                        ).execute()
+                        logging.info(f"Task '{new_title}' added for {task_body['due'][:10]} with ID: {new_task['id']}")
+                    
+                    NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+                        "com.haonguyen.menucalendar.update",
+                        None
+                    )
+                except Exception as e:
+                    logging.error(f"Error adding task '{new_title}': {str(e)}")
 
     def toggleRepeatOptions_(self, sender):
         self.repeat_options_view.setHidden_(sender.state() != 1)
@@ -709,10 +762,10 @@ class CalendarView(NSView):
         if day_label and day_label.task_date:
             self.showAddTaskAlert_(day_label)
         else:
-            print("Error: Could not retrieve task date for adding task")
+            logging.error("Could not retrieve task date for adding task")
 
     def showTaskPopover_(self, sender):
-        print("Showing popover for '...'")
+        logging.info("Showing popover for '...'")
         popover = NSPopover.alloc().init()
         popover.setBehavior_(1)
         popover.setAnimates_(False)
@@ -877,31 +930,43 @@ class CalendarAppDelegate(NSObject):
             self.status_item.button().setAttributedTitle_(mutable_attr_string)
 
     def updateCalendar_(self, notification):
-        self.updateStatusBar()
-        self.calendar_view.updateCalendar()
+        try:
+            current_date = datetime.now()
+            logging.info(f"Received update notification at {current_date}, updating to {current_date.date()}")
+            self.calendar_view.current_date = current_date
+            self.calendar_view.current_month = current_date.month
+            self.calendar_view.current_year = current_date.year
+            self.updateStatusBar()
+            self.calendar_view.updateCalendar()
+        except TimeoutError as e:
+            logging.error(f"Timeout error during calendar update: {str(e)}")
+        except Exception as e:
+            logging.error(f"Error updating calendar: {str(e)}")
 
     def togglePopover_(self, sender):
         if self.popover.isShown():
             self.popover.close()
         else:
-            # Hiển thị giao diện trước
-            self.popover.showRelativeToRect_ofView_preferredEdge_(sender.bounds(), sender, 3)
-            self.popover.contentViewController().view().window().makeKeyAndOrderFront_(None)
-            
-            # Sử dụng NSTimer để gọi API sau khi giao diện đã hiển thị
-            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-                0.1,  # Delay 0.1 giây
-                self.calendar_view,
-                "loadTasks",
-                None,
-                False
-            )
+            try:
+                self.popover.showRelativeToRect_ofView_preferredEdge_(sender.bounds(), sender, 3)
+                self.popover.contentViewController().view().window().makeKeyAndOrderFront_(None)
+                
+                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    0.1,
+                    self.calendar_view,
+                    "loadTasks",
+                    None,
+                    False
+                )
+            except Exception as e:
+                logging.error(f"Error toggling popover: {str(e)}")
 
     def applicationDidFinishLaunching_(self, notification):
         NSApplication.sharedApplication().setActivationPolicy_(1)
 
     def applicationShouldTerminateAfterLastWindowClosed_(self, sender):
         return False
+
 if __name__ == "__main__":
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(1)
