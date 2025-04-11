@@ -1,12 +1,13 @@
+#!/usr/bin/env python3
 import objc
 from AppKit import (
     NSApplication, NSStatusBar, NSPopover, NSView, NSTextField, NSMakeRect, 
     NSColor, NSSize, NSButton, NSRoundedBezelStyle, NSCenterTextAlignment, 
-    NSFont, NSImage, NSMutableAttributedString, NSTextAttachment, NSMenu, 
-    NSMenuItem, NSMakePoint, NSTimer
+    NSFont, NSImage, NSMutableAttributedString, NSMenu, 
+    NSMenuItem, NSMakePoint, NSTimer, NSTextAttachment
 )
 from Foundation import (
-    NSObject, NSAttributedString, NSDictionary, NSDistributedNotificationCenter
+    NSObject, NSAttributedString, NSDictionary, NSNotificationCenter, NSDistributedNotificationCenter
 )
 from datetime import datetime, timedelta
 import calendar
@@ -14,19 +15,12 @@ from lunarcalendar import Converter, Solar
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-import os
-from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
+import os
 import logging
 import socket
-
-# Định nghĩa phạm vi (scope) truy cập và đường dẫn file
-SCOPES = [
-    'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/tasks'
-]
-CLIENT_SECRET_FILE = '/Users/haonguyen/Projects/menu/menu_calendar/client_secret_856485619448-q2tqisv610002j405r3er1o48jm7qrgo.apps.googleusercontent.com.json'
-TOKEN_FILE = '/Users/haonguyen/Projects/menu/menu_calendar/token.json'
+import requests
 
 # Thiết lập logging
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,41 +32,93 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+# Biến toàn cục cho ngày cập nhật cuối cùng
+last_update_date = None
+
+# Định nghĩa phạm vi (scope) truy cập và đường dẫn file
+SCOPES = [
+    'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/tasks'
+]
+CLIENT_SECRET_FILE = '/Users/haonguyen/Projects/menu/menu_calendar/client_secret_856485619448-q2tqisv610002j405r3er1o48jm7qrgo.apps.googleusercontent.com.json'
+TOKEN_FILE = '/Users/haonguyen/Projects/menu/menu_calendar/token.json'
+
+# Lớp WakeupObserver để lắng nghe sự kiện đánh thức
+class WakeupObserver(NSObject):
+    def initWithCallback_(self, callback):
+        self = objc.super(WakeupObserver, self).init()
+        if self:
+            self.callback = callback
+        return self
+
+    def onWakeup_(self, notification):
+        try:
+            logging.info("System wakeup event detected, triggering calendar update check")
+            self.callback()
+        except Exception as e:
+            logging.error(f"Error handling wakeup event: {str(e)}")
+
+# Hàm lên lịch cập nhật vào nửa đêm
+def schedule_midnight_update(target, selector):
+    try:
+        now = datetime.now()
+        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        interval = (next_midnight - now).total_seconds()
+        
+        timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            interval,
+            target,
+            selector,
+            None,
+            False
+        )
+        logging.info(f"Scheduled midnight update in {interval} seconds")
+        return timer
+    except Exception as e:
+        logging.error(f"Error scheduling midnight update: {str(e)}")
+        return None
+
 def check_network():
     """Kiểm tra kết nối mạng."""
     try:
         socket.create_connection(("www.google.com", 80), timeout=5)
+        logging.info("Network connection is available")
         return True
     except OSError:
         logging.error("No network connection available")
         return False
 
 def get_service(api_name, api_version):
-    """Tạo dịch vụ cho API được chỉ định (Tasks)."""
     if not check_network():
+        logging.error("No network, skipping service initialization")
         return None
     
     creds = None
     if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+        try:
+            creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+        except Exception as e:
+            logging.error(f"Error loading token file: {str(e)}")
+            os.remove(TOKEN_FILE)  # Xóa file token nếu lỗi
     
     if creds and creds.expired and creds.refresh_token:
         try:
             logging.info("Access token đã hết hạn, đang làm mới bằng refresh token...")
-            creds.refresh(Request(timeout=60))  # Tăng timeout lên 60 giây
+            session = requests.Session()
+            creds.refresh(Request(session=session))
             with open(TOKEN_FILE, 'w') as token:
                 token.write(creds.to_json())
             logging.info("Token đã được làm mới và lưu lại.")
         except RefreshError as e:
-            logging.error(f"Lỗi khi làm mới token: {str(e)}. Yêu cầu đăng nhập lại...")
-            creds = None
+            logging.error(f"Lỗi khi làm mới token: {str(e)}")
+            creds = None  # Đặt creds về None để yêu cầu xác thực lại
     
     if not creds or not creds.valid:
         logging.info("Yêu cầu đăng nhập để cấp quyền truy cập...")
         try:
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
             flow.prompt = 'consent'
-            creds = flow.run_local_server(port=0, timeout_seconds=60)  # Tăng timeout
+            creds = flow.run_local_server(port=0, timeout_seconds=60)
             with open(TOKEN_FILE, 'w') as token:
                 token.write(creds.to_json())
             logging.info("Đăng nhập thành công! Token đã được lưu.")
@@ -82,11 +128,12 @@ def get_service(api_name, api_version):
     
     try:
         service = build(api_name, api_version, credentials=creds)
+        logging.info(f"Initialized {api_name} service successfully")
         return service
     except Exception as e:
         logging.error(f"Lỗi khi xây dựng dịch vụ {api_name}: {str(e)}")
         return None
-
+    
 class ClickableTextField(NSTextField):
     def init(self):
         self = objc.super(ClickableTextField, self).init()
@@ -166,7 +213,7 @@ class TaskActionHandler(NSObject):
             ).execute()
 
             logging.info(f"Task '{self.task_label.stringValue()}' updated to status: {updated_task['status']}")
-            NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+            NSNotificationCenter.defaultCenter().postNotificationName_object_(
                 "com.haonguyen.menucalendar.update",
                 None
             )
@@ -233,7 +280,7 @@ class TaskActionHandler(NSObject):
                     ).execute()
 
                     logging.info(f"Task '{self.task_label.stringValue()}' updated to new title: {new_title}")
-                    NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+                    NSNotificationCenter.defaultCenter().postNotificationName_object_(
                         "com.haonguyen.menucalendar.update",
                         None
                     )
@@ -259,7 +306,7 @@ class TaskActionHandler(NSObject):
             ).execute()
 
             logging.info(f"Task '{self.task_label.stringValue()}' removed")
-            NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+            NSNotificationCenter.defaultCenter().postNotificationName_object_(
                 "com.haonguyen.menucalendar.update",
                 None
             )
@@ -747,7 +794,7 @@ class CalendarView(NSView):
                         ).execute()
                         logging.info(f"Task '{new_title}' added for {task_body['due'][:10]} with ID: {new_task['id']}")
                     
-                    NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+                    NSNotificationCenter.defaultCenter().postNotificationName_object_(
                         "com.haonguyen.menucalendar.update",
                         None
                     )
@@ -877,6 +924,7 @@ class CalendarAppDelegate(NSObject):
     def init(self):
         self = objc.super(CalendarAppDelegate, self).init()
         if self:
+            logging.info("Initializing CalendarAppDelegate")
             self.status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(-1)
             self.updateStatusBar()
 
@@ -887,52 +935,112 @@ class CalendarAppDelegate(NSObject):
                 self.popover.setContentViewController_(objc.lookUpClass("NSViewController").alloc().initWithNibName_bundle_(None, None))
                 self.popover.contentViewController().setView_(self.calendar_view)
                 self.calendar_view.setFrameOrigin_(NSMakePoint(0, 580 - 450))
+            else:
+                logging.error("Failed to initialize CalendarView")
 
             self.status_item.button().setAction_("togglePopover:")
             self.status_item.button().setTarget_(self)
             self.popover.setAnimates_(False)
             self.popover.setBehavior_(1)
 
-            center = NSDistributedNotificationCenter.defaultCenter()
+            # Khởi tạo ngày cập nhật cuối cùng
+            global last_update_date
+            last_update_date = datetime.now().date()
+            logging.info(f"Initialized last_update_date to {last_update_date}")
+
+            # Thiết lập bộ quan sát sự kiện đánh thức
+            self.setup_wakeup_listener()
+
+            # Lên lịch cập nhật vào nửa đêm
+            self.schedule_midnight_update()
+
+            # Đăng ký thông báo nội bộ để cập nhật khi thay đổi tác vụ
+            center = NSNotificationCenter.defaultCenter()
             center.addObserver_selector_name_object_(
                 self,
                 "updateCalendar:",
                 "com.haonguyen.menucalendar.update",
                 None
             )
+            logging.info("Registered for internal update notifications")
+
+            # Thêm timer định kỳ để đảm bảo cập nhật
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                60.0,  # Kiểm tra mỗi phút
+                self,
+                "check_and_update_date",
+                None,
+                True
+            )
+            logging.info("Scheduled periodic date check every 60 seconds")
+
         return self
 
+    def setup_wakeup_listener(self):
+        try:
+            observer = WakeupObserver.alloc().initWithCallback_(self.check_and_update_date)
+            center = NSDistributedNotificationCenter.defaultCenter()
+            center.addObserver_selector_name_object_(
+                observer,
+                objc.selector(observer.onWakeup_, signature=b"v@:@"),
+                "com.apple.screenIsUnlocked",
+                None
+            )
+            logging.info("Wakeup listener setup successfully using NSDistributedNotificationCenter")
+            self.wakeup_observer = observer  # Lưu tham chiếu để tránh bị thu hồi
+        except Exception as e:
+            logging.error(f"Error setting up wakeup listener: {str(e)}")
+
+    def check_and_update_date(self):
+        global last_update_date
+        try:
+            current_date = datetime.now().date()
+            logging.info(f"check_and_update_date called, current_date: {current_date}, last_update_date: {last_update_date}")
+            
+            if current_date != last_update_date:
+                self.updateCalendar_(None)
+                last_update_date = current_date
+                self.schedule_midnight_update()
+                logging.info(f"Date updated to {current_date}")
+            else:
+                logging.info("No date update needed (same as last update)")
+        except Exception as e:
+            logging.error(f"Error in check_and_update_date: {str(e)}")
+
+    def schedule_midnight_update(self):
+        schedule_midnight_update(self, "check_and_update_date")
+
     def updateStatusBar(self):
-        current_date = datetime.now()
-        weekday = current_date.weekday()
-        day = current_date.day
-        days_vn = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
-        weekday_str = days_vn[weekday] if weekday != 6 else "Chủ Nhật"
-
-        base_path = "/Users/haonguyen/Projects/menu/menu_calendar/images/"
-        icon_name = f"{base_path}calendar_{day}_icon.png"
-        icon = NSImage.alloc().initWithContentsOfFile_(icon_name)
-
-        date_str = f" {weekday_str}"
-        mutable_attr_string = NSMutableAttributedString.alloc().initWithString_(date_str)
-
-        if icon:
-            attachment = NSTextAttachment.alloc().init()
-            attachment.setImage_(icon)
-            attachment.setBounds_(NSMakeRect(0, -4, 20, 20))
-
-            attachment_string = NSAttributedString.attributedStringWithAttachment_(attachment)
-            final_string = NSMutableAttributedString.alloc().initWithAttributedString_(attachment_string)
-            final_string.appendAttributedString_(mutable_attr_string)
-
-            self.status_item.button().setAttributedTitle_(final_string)
-        else:
-            self.status_item.button().setAttributedTitle_(mutable_attr_string)
+        try:
+            current_date = datetime.now()
+            weekday = current_date.weekday()
+            day = current_date.day
+            days_vn = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
+            weekday_str = days_vn[weekday] if weekday != 6 else "Chủ Nhật"
+            base_path = "/Users/haonguyen/Projects/menu/menu_calendar/images/"
+            icon_name = f"{base_path}calendar_{day}_icon.png"
+            icon = NSImage.alloc().initWithContentsOfFile_(icon_name)
+            date_str = f" {weekday_str}"
+            mutable_attr_string = NSMutableAttributedString.alloc().initWithString_(date_str)
+            if icon:
+                attachment = NSTextAttachment.alloc().init()
+                attachment.setImage_(icon)
+                attachment.setBounds_(NSMakeRect(0, -4, 20, 20))
+                attachment_string = NSAttributedString.attributedStringWithAttachment_(attachment)
+                final_string = NSMutableAttributedString.alloc().initWithAttributedString_(attachment_string)
+                final_string.appendAttributedString_(mutable_attr_string)
+                self.status_item.button().setAttributedTitle_(final_string)
+            else:
+                logging.warning(f"Icon file {icon_name} not found, using text-only title")
+                self.status_item.button().setAttributedTitle_(mutable_attr_string)
+            logging.info(f"Updated status bar to day {day}, weekday {weekday_str}")
+        except Exception as e:
+            logging.error(f"Error updating status bar: {str(e)}")
 
     def updateCalendar_(self, notification):
         try:
             current_date = datetime.now()
-            logging.info(f"Received update notification at {current_date}, updating to {current_date.date()}")
+            logging.info(f"Updating calendar at {current_date}, setting to {current_date.date()}")
             self.calendar_view.current_date = current_date
             self.calendar_view.current_month = current_date.month
             self.calendar_view.current_year = current_date.year
@@ -944,13 +1052,13 @@ class CalendarAppDelegate(NSObject):
             logging.error(f"Error updating calendar: {str(e)}")
 
     def togglePopover_(self, sender):
-        if self.popover.isShown():
-            self.popover.close()
-        else:
-            try:
+        try:
+            if self.popover.isShown():
+                self.popover.close()
+                logging.info("Closed popover")
+            else:
                 self.popover.showRelativeToRect_ofView_preferredEdge_(sender.bounds(), sender, 3)
                 self.popover.contentViewController().view().window().makeKeyAndOrderFront_(None)
-                
                 NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
                     0.1,
                     self.calendar_view,
@@ -958,18 +1066,29 @@ class CalendarAppDelegate(NSObject):
                     None,
                     False
                 )
-            except Exception as e:
-                logging.error(f"Error toggling popover: {str(e)}")
+                logging.info("Opened popover and scheduled task load")
+        except Exception as e:
+            logging.error(f"Error toggling popover: {str(e)}")
 
     def applicationDidFinishLaunching_(self, notification):
         NSApplication.sharedApplication().setActivationPolicy_(1)
+        logging.info("Application finished launching")
 
     def applicationShouldTerminateAfterLastWindowClosed_(self, sender):
         return False
 
+    def applicationWillTerminate_(self, notification):
+        NSNotificationCenter.defaultCenter().removeObserver_(self.wakeup_observer)
+        NSDistributedNotificationCenter.defaultCenter().removeObserver_(self.wakeup_observer)
+        logging.info("Application terminated, cleaned up observers")
+
 if __name__ == "__main__":
-    app = NSApplication.sharedApplication()
-    app.setActivationPolicy_(1)
-    delegate = CalendarAppDelegate.alloc().init()
-    app.setDelegate_(delegate)
-    app.run()
+    try:
+        logging.info("Starting menu calendar application")
+        app = NSApplication.sharedApplication()
+        app.setActivationPolicy_(1)
+        delegate = CalendarAppDelegate.alloc().init()
+        app.setDelegate_(delegate)
+        app.run()
+    except Exception as e:
+        logging.error(f"Error starting application: {str(e)}")

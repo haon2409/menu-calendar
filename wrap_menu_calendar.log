@@ -1,7 +1,0 @@
-2025-04-06 08:59:35 - INFO - Cleared log file: /tmp/menucalendar.out
-2025-04-06 08:59:35 - INFO - Cleared log file: /tmp/menucalendar.err
-2025-04-06 08:59:35 - INFO - Application started
-2025-04-06 08:59:35 - INFO - Started menu_calendar.py process
-2025-04-06 08:59:35 - INFO - Sent update notification to menu_calendar
-2025-04-06 08:59:35 - INFO - Wakeup listener setup successfully
-2025-04-06 08:59:35 - INFO - Scheduled midnight update in 54024.143474 seconds

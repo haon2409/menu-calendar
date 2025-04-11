@@ -1,19 +1,17 @@
-2025-04-06 08:53:32 - INFO - file_cache is only supported with oauth2client<4.0.0
-2025-04-06 08:53:32 - INFO - Updating UI with month: 4, year: 2025
-2025-04-06 08:53:38 - INFO - Updating UI with month: 5, year: 2025
-2025-04-06 08:53:40 - INFO - Updating UI with month: 4, year: 2025
-2025-04-06 08:54:10 - INFO - Right-clicked on day: 5 - Date: 2025-04-05
-2025-04-06 08:54:17 - INFO - Task 'test' added for 2025-04-05 with ID: YWdHQ1J6OVJyRlZoVUhOLQ
-2025-04-06 08:54:17 - INFO - Received update notification at 2025-04-06 08:54:17.523528, updating to 2025-04-06
-2025-04-06 08:54:17 - INFO - Updating UI with month: 4, year: 2025
-2025-04-06 08:57:42 - INFO - file_cache is only supported with oauth2client<4.0.0
-2025-04-06 08:57:42 - INFO - Updating UI with month: 4, year: 2025
-2025-04-06 08:58:42 - INFO - file_cache is only supported with oauth2client<4.0.0
-2025-04-06 08:58:42 - INFO - Updating UI with month: 4, year: 2025
-2025-04-06 08:58:54 - INFO - Task 'test' removed
-2025-04-06 08:58:54 - INFO - Received update notification at 2025-04-06 08:58:54.699983, updating to 2025-04-06
-2025-04-06 08:58:54 - INFO - Updating UI with month: 4, year: 2025
-2025-04-06 08:59:36 - INFO - file_cache is only supported with oauth2client<4.0.0
-2025-04-06 08:59:36 - INFO - Updating UI with month: 4, year: 2025
-2025-04-06 08:59:41 - INFO - Updating UI with month: 5, year: 2025
-2025-04-06 08:59:43 - INFO - Updating UI with month: 4, year: 2025
+2025-04-11 08:13:17 - INFO - Starting menu calendar application
+2025-04-11 08:13:17 - INFO - Initializing CalendarAppDelegate
+2025-04-11 08:13:17 - INFO - Updated status bar to day 11, weekday Thứ 6
+2025-04-11 08:13:18 - INFO - Network connection is available
+2025-04-11 08:13:18 - INFO - Yêu cầu đăng nhập để cấp quyền truy cập...
+2025-04-11 08:14:06 - INFO - "GET /?state=SxyAMInPKp9MyoDhkbMHLtq6ByQpmr&code=4/0Ab_5qllZPbpME3Y9jF66BuirM4K8VX8GUwRr2XCSSIzBL1EBSnllfKD9xBKGZNu4gv7FrQ&scope=https://www.googleapis.com/auth/calendar.readonly%20https://www.googleapis.com/auth/tasks HTTP/1.1" 200 65
+2025-04-11 08:14:06 - INFO - Đăng nhập thành công! Token đã được lưu.
+2025-04-11 08:14:06 - INFO - file_cache is only supported with oauth2client<4.0.0
+2025-04-11 08:14:06 - INFO - Initialized tasks service successfully
+2025-04-11 08:14:06 - INFO - Updating UI with month: 4, year: 2025
+2025-04-11 08:14:07 - INFO - Initialized last_update_date to 2025-04-11
+2025-04-11 08:14:07 - INFO - Wakeup listener setup successfully using NSDistributedNotificationCenter
+2025-04-11 08:14:07 - INFO - Scheduled midnight update in 56752.460914 seconds
+2025-04-11 08:14:07 - INFO - Registered for internal update notifications
+2025-04-11 08:14:07 - INFO - Scheduled periodic date check every 60 seconds
+2025-04-11 08:14:07 - INFO - Application finished launching
+2025-04-11 08:15:09 - INFO - Opened popover and scheduled task load
