@@ -21,6 +21,7 @@ import os
 import logging
 import socket
 import requests
+import webbrowser
 
 # Thiết lập logging
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -118,6 +119,12 @@ def get_service(api_name, api_version):
         try:
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
             flow.prompt = 'consent'
+            # Tạo URL xác thực
+            auth_url, _ = flow.authorization_url(prompt='consent')
+            # Mở trình duyệt để người dùng cấp quyền
+            logging.info(f"Mở trình duyệt để cấp quyền: {auth_url}")
+            webbrowser.open(auth_url)
+            # Chạy xác thực qua local server
             creds = flow.run_local_server(port=0, timeout_seconds=60)
             with open(TOKEN_FILE, 'w') as token:
                 token.write(creds.to_json())
@@ -133,7 +140,7 @@ def get_service(api_name, api_version):
     except Exception as e:
         logging.error(f"Lỗi khi xây dựng dịch vụ {api_name}: {str(e)}")
         return None
-    
+          
 class ClickableTextField(NSTextField):
     def init(self):
         self = objc.super(ClickableTextField, self).init()
