@@ -1,24 +1,90 @@
-# Menu Calendar
+# Menu Calendar - Standalone App
 
-**Menu Calendar** là một ứng dụng Python giúp bạn tạo và quản lý thực đơn hàng ngày một cách hiệu quả.
+Ứng dụng lịch hiển thị trong menu bar của macOS với hỗ trợ âm lịch Việt Nam.
 
-## Tính Năng
+## ✨ Tính năng
 
-- **Tạo Thực Đơn Hàng Ngày**: Tự động tạo thực đơn cho mỗi ngày dựa trên các tùy chọn được cung cấp.&#8203;:contentReference[oaicite:2]{index=2}
-- **Theo Dõi và Cập Nhật**: :contentReference[oaicite:3]{index=3}&#8203;:contentReference[oaicite:4]{index=4}
-- **Ghi Nhật Ký**: :contentReference[oaicite:5]{index=5}&#8203;:contentReference[oaicite:6]{index=6}
+- 📅 Hiển thị lịch dương và âm lịch
+- 🎯 Icon động theo ngày trong menu bar
+- 🖱️ Click để mở popover lịch chi tiết
+- 🔄 Tự động cập nhật khi hệ thống thức dậy
+- ⏰ Cập nhật vào nửa đêm mỗi ngày
+- 🎨 Giao diện đẹp với màu sắc phân biệt ngày trong tuần
 
-## Cấu Trúc Thư Mục
+## 🚀 Cách sử dụng
 
-- `menu_calendar.py`: :contentReference[oaicite:7]{index=7}&#8203;:contentReference[oaicite:8]{index=8}
-- `watch_and_run.py`: :contentReference[oaicite:9]{index=9}&#8203;:contentReference[oaicite:10]{index=10}
-- `wrap_menu_calendar.py`: :contentReference[oaicite:11]{index=11}&#8203;:contentReference[oaicite:12]{index=12}
-- `images/`: :contentReference[oaicite:13]{index=13}&#8203;:contentReference[oaicite:14]{index=14}
-- `.gitignore`: :contentReference[oaicite:15]{index=15}&#8203;:contentReference[oaicite:16]{index=16}
+### **Chạy Standalone App (Khuyến nghị)**
 
-## Cài Đặt
+```bash
+open MenuCalendar_Standalone.app
+```
 
-1. **Clone Repository**: :contentReference[oaicite:17]{index=17}&#8203;:contentReference[oaicite:18]{index=18}
+### **Thiết lập Auto-Start**
 
-   ```bash
-   git clone https://github.com/haon2409/menu-calendar.git
+1. **Mở System Preferences** → **Users & Groups** → **Login Items**
+2. **Click "+"** và chọn `MenuCalendar_Standalone.app`
+3. **Restart máy** để kiểm tra
+
+## 🔧 Build Standalone App
+
+### **Yêu cầu:**
+- macOS 10.15+
+- Python 3.x
+- PyInstaller: `pip3 install pyinstaller`
+
+### **Cách build:**
+
+```bash
+# Build Standalone App
+./build_standalone.sh
+
+# Cài đặt vào Applications (tùy chọn)
+sudo cp -r MenuCalendar_Standalone.app /Applications/
+```
+
+### **Sau khi build:**
+- File `MenuCalendar_Standalone.app` sẽ được tạo
+- App có thể chạy độc lập, không cần Python
+- Có thể copy sang máy khác và chạy ngay
+
+## 📁 Cấu trúc project
+
+```
+menu_calendar/
+├── menu_calendar.py              # Source code chính
+├── images/                       # Thư mục icon các ngày
+├── MenuCalendar_Standalone.app/  # Standalone App (sau khi build)
+├── build_standalone.sh          # Script build Standalone
+└── README.md                    # Hướng dẫn này
+```
+
+## 🛠️ Phát triển
+
+### **Chỉnh sửa source code:**
+1. Sửa file `menu_calendar.py`
+2. Chạy `./build_standalone.sh` để build lại
+3. Test với `open MenuCalendar_Standalone.app`
+
+### **Debug:**
+- Logs được ghi vào file log trong App Bundle
+- Có thể chạy trực tiếp: `python3 menu_calendar.py`
+
+## 📋 Troubleshooting
+
+### **App không chạy:**
+- Kiểm tra quyền thực thi: `chmod +x MenuCalendar_Standalone.app/Contents/MacOS/MenuCalendar`
+- Kiểm tra thư mục `images` có trong App Bundle không
+
+### **Auto-start không hoạt động:**
+- Kiểm tra Login Items trong System Preferences
+- Đảm bảo checkbox được tick
+
+## 🎯 Kết luận
+
+**MenuCalendar_Standalone.app** là phiên bản hoàn hảo:
+- ✅ Không cần Python dependencies
+- ✅ Chạy được trên mọi máy macOS 10.15+
+- ✅ Dễ dàng chia sẻ và cài đặt
+- ✅ Tích hợp tốt với macOS Login Items
+
+**Chúc bạn sử dụng vui vẻ!** 🎉
