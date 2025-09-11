@@ -114,13 +114,13 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='images/MyIcon.icns',
 )
 
 app = BUNDLE(
     exe,
     name='MenuCalendar_Standalone.app',
-    icon=None,
+    icon='images/MyIcon.icns',
     bundle_identifier='com.menucalendar.standalone',
     info_plist={
         'CFBundleName': 'Menu Calendar',
