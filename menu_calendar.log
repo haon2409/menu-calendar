@@ -1,0 +1,11 @@
+2025-09-13 12:33:39 - INFO - Starting menu calendar application
+2025-09-13 12:33:39 - INFO - Initializing CalendarAppDelegate
+2025-09-13 12:33:39 - INFO - Updated status bar to day 13, weekday Thứ 7
+2025-09-13 12:33:39 - INFO - Updating UI with month: 9, year: 2025
+2025-09-13 12:33:39 - INFO - Initialized last_update_date to 2025-09-13
+2025-09-13 12:33:39 - INFO - Wakeup listener setup successfully using NSDistributedNotificationCenter
+2025-09-13 12:33:39 - INFO - Scheduled midnight update in 41180.596949 seconds
+2025-09-13 12:33:39 - INFO - Scheduled periodic date check every 60 seconds
+2025-09-13 12:33:39 - INFO - Application finished launching
+2025-09-13 12:33:59 - INFO - Opened popover
+2025-09-13 12:33:59 - INFO - Closed popover

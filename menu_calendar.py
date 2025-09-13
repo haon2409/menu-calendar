@@ -12,8 +12,16 @@ from Foundation import (
 from datetime import datetime, timedelta
 import calendar
 from lunarcalendar import Converter, Solar
-import os
+import sys, os
 import logging
+        
+def resource_path(relative_path):
+    """Trả về đường dẫn đến file resource, hỗ trợ cả khi chạy PyInstaller bundle."""
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS  # Thư mục tạm của PyInstaller
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 # Thiết lập logging
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -379,9 +387,10 @@ class CalendarAppDelegate(NSObject):
             day = current_date.day
             days_vn = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
             weekday_str = days_vn[weekday] if weekday != 6 else "Chủ Nhật"
-            base_path = "/Users/haonguyen/Projects/menu/menu_calendar/images/"
-            icon_name = f"{base_path}calendar_{day}_icon.png"
+            
+            icon_name = resource_path(f"images/calendar_{day}_icon.png")
             icon = NSImage.alloc().initWithContentsOfFile_(icon_name)
+            
             date_str = f" {weekday_str}"
             mutable_attr_string = NSMutableAttributedString.alloc().initWithString_(date_str)
             if icon:
