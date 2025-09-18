@@ -1,90 +1,67 @@
-# Menu Calendar - Standalone App
+Menu Calendar - A Menu Bar Calendar for macOS
+Overview
+Menu Calendar is a lightweight macOS menu bar application displaying the current date with dynamic icons and a popover calendar view. It supports both Gregorian and Lunar calendars, auto-updates on system wake/sleep, and schedules midnight refreshes.
+Features
 
-Ứng dụng lịch hiển thị trong menu bar của macOS với hỗ trợ âm lịch Việt Nam.
+Menu Bar Display: Shows weekday and day with icon (e.g., calendar_1_icon.png for day 1).
+Popover Calendar: Interactive monthly calendar with day clicks for navigation.
+Dual Calendar Support: Gregorian and Vietnamese Lunar dates via lunarcalendar library.
+Auto-Updates: Refreshes on system wakeup, midnight, and manual toggle.
+Logging: Detailed logs in menu_calendar.log for debugging.
+Clickable Elements: Navigate months/years via clicks on labels.
+Resource Handling: Supports PyInstaller bundles for standalone deployment.
 
-## ✨ Tính năng
+Requirements
 
-- 📅 Hiển thị lịch dương và âm lịch
-- 🎯 Icon động theo ngày trong menu bar
-- 🖱️ Click để mở popover lịch chi tiết
-- 🔄 Tự động cập nhật khi hệ thống thức dậy
-- ⏰ Cập nhật vào nửa đêm mỗi ngày
-- 🎨 Giao diện đẹp với màu sắc phân biệt ngày trong tuần
+macOS 10.15+
+Python 3.x
+PyObjC (pip install pyobjc)
+PyInstaller (pip install pyinstaller)
+Lunarcalendar (pip install lunarcalendar)
 
-## 🚀 Cách sử dụng
+Installation
 
-### **Chạy Standalone App (Khuyến nghị)**
+Clone the repository:git clone https://github.com/haon2409/menu-calendar.git
+cd menu-calendar
 
-```bash
-open MenuCalendar_Standalone.app
-```
 
-### **Thiết lập Auto-Start**
+Install dependencies:pip install pyobjc pyinstaller lunarcalendar
 
-1. **Mở System Preferences** → **Users & Groups** → **Login Items**
-2. **Click "+"** và chọn `MenuCalendar_Standalone.app`
-3. **Restart máy** để kiểm tra
 
-## 🔧 Build Standalone App
-
-### **Yêu cầu:**
-- macOS 10.15+
-- Python 3.x
-- PyInstaller: `pip3 install pyinstaller`
-
-### **Cách build:**
-
-```bash
-# Build Standalone App
+Build the standalone app:chmod +x build_standalone.sh
 ./build_standalone.sh
 
-# Cài đặt vào Applications (tùy chọn)
-sudo cp -r MenuCalendar_Standalone.app /Applications/
-```
 
-### **Sau khi build:**
-- File `MenuCalendar_Standalone.app` sẽ được tạo
-- App có thể chạy độc lập, không cần Python
-- Có thể copy sang máy khác và chạy ngay
+The built app (MenuCalendar_Standalone.app) will be in the project root.
 
-## 📁 Cấu trúc project
+File Structure
 
-```
-menu_calendar/
-├── menu_calendar.py              # Source code chính
-├── images/                       # Thư mục icon các ngày
-├── MenuCalendar_Standalone.app/  # Standalone App (sau khi build)
-├── build_standalone.sh          # Script build Standalone
-└── README.md                    # Hướng dẫn này
-```
+menu_calendar.py: Core application logic.
+build_standalone.sh: Script to build the standalone app with PyInstaller.
+images/: Folder with icons (e.g., MyIcon.icns, calendar_{day}_icon.png).
+menu_calendar.spec: Generated PyInstaller spec file (temporary).
 
-## 🛠️ Phát triển
+Usage
 
-### **Chỉnh sửa source code:**
-1. Sửa file `menu_calendar.py`
-2. Chạy `./build_standalone.sh` để build lại
-3. Test với `open MenuCalendar_Standalone.app`
+Run MenuCalendar_Standalone.app (or python menu_calendar.py for development).
+The app appears in the menu bar with the current weekday and day icon.
+Click the menu bar icon to toggle the calendar popover.
+Click day labels to navigate months; view Lunar dates on hover/click.
+The app auto-refreshes at midnight or on system wakeup.
 
-### **Debug:**
-- Logs được ghi vào file log trong App Bundle
-- Có thể chạy trực tiếp: `python3 menu_calendar.py`
+Notes
 
-## 📋 Troubleshooting
+Icons must be in images/ (e.g., calendar_1_icon.png to calendar_31_icon.png).
+Logs are saved to menu_calendar.log in the script directory.
+Standalone build requires no Python installation; copy to /Applications/ and run.
+Fallback to text if icons are missing.
 
-### **App không chạy:**
-- Kiểm tra quyền thực thi: `chmod +x MenuCalendar_Standalone.app/Contents/MacOS/MenuCalendar`
-- Kiểm tra thư mục `images` có trong App Bundle không
+Troubleshooting
 
-### **Auto-start không hoạt động:**
-- Kiểm tra Login Items trong System Preferences
-- Đảm bảo checkbox được tick
+Icons not showing: Ensure images/ contains required PNG/ICNS files.
+Build fails: Verify PyInstaller and dependencies; check logs for errors.
+No Lunar dates: Install lunarcalendar and confirm Vietnamese locale support.
+Updates not working: Review menu_calendar.log for wakeup/midnight scheduling issues.
 
-## 🎯 Kết luận
-
-**MenuCalendar_Standalone.app** là phiên bản hoàn hảo:
-- ✅ Không cần Python dependencies
-- ✅ Chạy được trên mọi máy macOS 10.15+
-- ✅ Dễ dàng chia sẻ và cài đặt
-- ✅ Tích hợp tốt với macOS Login Items
-
-**Chúc bạn sử dụng vui vẻ!** 🎉
+License
+MIT License. See LICENSE for details.
