@@ -385,8 +385,8 @@ class CalendarAppDelegate(NSObject):
             current_date = datetime.now()
             weekday = current_date.weekday()
             day = current_date.day
-            days_vn = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
-            weekday_str = days_vn[weekday] if weekday != 6 else "Chủ Nhật"
+            days_vn = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+            weekday_str = days_vn[weekday] if weekday != 6 else "CN"
             
             icon_name = resource_path(f"images/calendar_{day}_icon.png")
             icon = NSImage.alloc().initWithContentsOfFile_(icon_name)
